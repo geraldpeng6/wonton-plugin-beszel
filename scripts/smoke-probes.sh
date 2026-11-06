@@ -1,17 +1,44 @@
 # shellcheck shell=bash
-# scripts/smoke.sh 的一项一项探测，跟着插件走。没写的项会 FAIL 并给出写法，不会默认放行。
-#
-# 页面：web_assert 从标准输入读页面，命中的确是应用的真实页面时返回 0。
-# 身份：identity_check 用应用自己的“当前用户”接口断言认出的是用户管理员。没有用户体系时写 IDENTITY_NA=1，
-#       并在 SMOKE_NOTE 里写原因。dweb / web_get 是带用户会话的请求助手，可继续走应用自己的登录链。
-# 工具：MCP_TOOL 写一个只读工具名（可带插件前缀），MCP_ARGS 是 JSON 参数；mcp_assert 从标准输入读调用结果。
-#       要断言多个工具时改成写 mcp_check；调用前要备数据时写 before_mcp。
-# 装之前要准备（如先配出口代理）：写 before_install。
+# Beszel：sso=proxy（网关带 X-Wonton-User-Email 代登录）；清单没有 mcp。
+# 历史数据算用户数据：data_write 改这台服务器的名字并确认已经有历史记录，data_check 在升级、重装后核对还在。
+SYSTEM_ID=wontonlocal0000
+export DATA_NA=0
 
-web_assert() { grep -q '你好'; }   # 示例页的标题
+web_assert() { grep -qi '<title>.*beszel' <<<"$(tr -d '\n' | head -c 4000)"; }   # 标准输入：SPA 首页 HTML
 
-identity_check() { # 页面回显的就是网关注入的用户名
-  local page
-  page="$(dweb /)" || { echo "页面失败：$page"; return 1; }
-  grep -qF "你好，$SMOKE_OWNER" <<<"$page" || { echo "页面没回显用户 $SMOKE_OWNER：$(head -c 120 <<<"$page")"; return 1; }
+identity_check() { # 应用自己的当前用户接口：认出的是主人，而且是管理员
+  local out email
+  out="$(dweb /api/collections/users/auth-refresh -X POST)" || { echo "auth-refresh 失败：$out"; return 1; }
+  grep -q '"role":"admin"' <<<"$out" || { echo "不是管理员：$(head -c 200 <<<"$out")"; return 1; }
+  email="${SMOKE_OWNER_EMAIL:-$(sed -n 's/^WONTON_OWNER_EMAIL=//p' "${dir:-.}/.wonton/.env" 2>/dev/null | tail -1)}"
+  grep -qF "\"email\":\"$email\"" <<<"$out" || { echo "认出的不是主人（$email）：$(head -c 200 <<<"$out")"; return 1; }
+}
+
+data_marker() { printf 'keep-%s' "${E2E_INSTANCE:-${SMOKE_INSTANCE:-dev}}"; }
+
+data_write() { # 改服务器名字，并确认已经攒下历史记录
+  local marker rows
+  dweb --fresh / -L >/dev/null || { echo "重建会话失败"; return 1; }
+  marker="$(data_marker)"
+  for _ in $(seq 1 60); do
+    rows="$(dweb "/api/collections/system_stats/records?perPage=1&fields=id")" || { echo "查历史失败：$rows"; return 1; }
+    grep -q '"totalItems":0' <<<"$rows" || break
+    sleep 2
+  done
+  if grep -q '"totalItems":0' <<<"$rows"; then echo "一直没有历史记录：$rows"; return 1; fi
+  dweb "/api/collections/systems/records/$SYSTEM_ID" -X PATCH \
+    -H 'Content-Type: application/json' -d "{\"name\":\"$marker\"}" | grep -q "\"name\":\"$marker\"" ||
+    { echo "改名没生效"; return 1; }
+  return 0
+}
+
+data_check() { # 名字和历史都还在。重装、升级会重建核心，会话要重来
+  local marker out
+  dweb --fresh / -L >/dev/null || { echo "重建会话失败"; return 1; }
+  marker="$(data_marker)"
+  out="$(dweb "/api/collections/systems/records/$SYSTEM_ID")" || { echo "查服务器失败：$out"; return 1; }
+  grep -qF "\"name\":\"$marker\"" <<<"$out" || { echo "改过的名字丢了：$(head -c 200 <<<"$out")"; return 1; }
+  out="$(dweb "/api/collections/system_stats/records?perPage=1&fields=id")" || { echo "查历史失败：$out"; return 1; }
+  if grep -q '"totalItems":0' <<<"$out"; then echo "历史记录没了"; return 1; fi
+  return 0
 }
