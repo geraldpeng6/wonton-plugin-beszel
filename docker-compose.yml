@@ -77,6 +77,8 @@ services:
     # 必须在宿主网络里：不在的话读到的是自己容器的网卡，网络图是错的（上游为此要求 host 网络）。
     # 顺带拿到宿主的温度、磁盘和包更新，不需要 privileged、cap_add 或 pid: host。
     network_mode: host
+    # 宿主网络不共用 UTS，不写就是容器 ID（详情页的信息条显示它）。
+    hostname: server-01
     environment:
       # 只用套接字，不监听端口；hub 是发起方，agent 不需要 HUB_URL/TOKEN。
       LISTEN: /beszel_socket/beszel.sock
