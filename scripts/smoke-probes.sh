@@ -25,10 +25,11 @@ data_write() { # 改服务器名字，并确认已经攒下历史记录
     grep -q '"totalItems":0' <<<"$rows" || break
     sleep 2
   done
-  grep -q '"totalItems":0' <<<"$rows" && { echo "一直没有历史记录：$rows"; return 1; }
+  if grep -q '"totalItems":0' <<<"$rows"; then echo "一直没有历史记录：$rows"; return 1; fi
   dweb "/api/collections/systems/records/$SYSTEM_ID" -X PATCH \
     -H 'Content-Type: application/json' -d "{\"name\":\"$marker\"}" | grep -q "\"name\":\"$marker\"" ||
     { echo "改名没生效"; return 1; }
+  return 0
 }
 
 data_check() { # 名字和历史都还在。重装、升级会重建核心，会话要重来
@@ -38,5 +39,6 @@ data_check() { # 名字和历史都还在。重装、升级会重建核心，会
   out="$(dweb "/api/collections/systems/records/$SYSTEM_ID")" || { echo "查服务器失败：$out"; return 1; }
   grep -qF "\"name\":\"$marker\"" <<<"$out" || { echo "改过的名字丢了：$(head -c 200 <<<"$out")"; return 1; }
   out="$(dweb "/api/collections/system_stats/records?perPage=1&fields=id")" || { echo "查历史失败：$out"; return 1; }
-  grep -q '"totalItems":0' <<<"$out" && { echo "历史记录没了"; return 1; }
+  if grep -q '"totalItems":0' <<<"$out"; then echo "历史记录没了"; return 1; fi
+  return 0
 }
