@@ -1,78 +1,169 @@
-# 示例插件：nginx 显示一个网页，向登录的人问好。改成自己的应用见 https://github.com/geraldpeng6/wonton-docs/blob/main/develop.md#写插件。
+# Beszel：CPU、内存、磁盘、网络和温度的历史图表。Hub（网页和存储）与 Agent（采集）在同一个插件里，
+# 经数据目录里的 unix 套接字相连，Agent 走 SSH 服务，Hub 主动拨号（上游“Connecting to a local agent”的做法）。
 services:
-  web:
-    # 镜像按摘要固定（多架构镜像写清单列表的摘要），标签只给人看。
-    image: nginx:1.31.7-alpine@sha256:892bb2152464f0c5d8972593a5f5afaf8054552580b699d95f8ff4af08c2d33d
+  hub:
+    # 上游官方镜像（MIT），按 amd64/arm64 清单列表摘要固定。
+    image: henrygd/beszel:0.21.1@sha256:8514a69d9bbbcb74f371a3205561ee231fc0289739cea64e8131f341d695b770
     environment:
-      # 网关代登录：SSI 回显的 Remote-User 只信核心带来的。官方镜像启动时对 templates 目录里的
-      # *.template 做 envsubst，把下面的地址换进 nginx 配置（见 web/default.conf.template）。
-      WONTON_CORE_ADDRESS: ${WONTON_CORE_ADDRESS}
-    # 包里的文件经 configs 交给容器（核心在启动前写进去），不能用卷挂载。
-    configs:
-      - source: site
-        target: /etc/nginx/templates/default.conf.template
-      - source: page
-        target: /usr/share/nginx/html/index.html
-      - source: tokens
-        target: /usr/share/nginx/html/tokens.css
+      # 通知和页面里的链接用它，语义是插件的公开地址。
+      APP_URL: ${WONTON_APP_URL}
+      # 新装时（空数据库）由上游建第一个管理员：邮箱取主人填的，密码由核心生成。
+      # 之后这两项不再生效，主人改了邮箱时 key 步骤在每次启动时改回当前值。
+      USER_EMAIL: ${WONTON_OWNER_EMAIL:?插件要主人的邮箱建管理员}
+      USER_PASSWORD: ${WONTON_SECRET_OWNER_PASSWORD}
+      # 网关代登录：网关注入这个头，值就是用户的邮箱（上游按邮箱找用户，不建新用户）。
+      TRUSTED_AUTH_HEADER: X-Wonton-User-Email
+      # 只信核心的地址；别的来源自己带这个头也进不来。
+      TRUSTED_PROXY_IPS: ${WONTON_CORE_ADDRESS}
+      # 网页只经网关进来，网关已经认过人；留着应用自己的登录页只会多一道没人知道密码的门。
+      DISABLE_PASSWORD_AUTH: "true"
+      TZ: ${TZ}
+    volumes:
+      - ${WONTON_APP_DATA}/data:/beszel_data
+      - ${WONTON_APP_DATA}/socket:/beszel_socket
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1/healthz"]
+      # 上游的 health 子命令：真问一次 /api/health，不是看进程在不在。
+      test: ["CMD", "/beszel", "health", "--url", "http://127.0.0.1:8090"]
+      interval: 30s
+      timeout: 10s
+      start_period: 60s
+      start_interval: 2s
+
+  # 一次性服务：把 hub 的公钥写进 agent 的授权文件（agent 没有它不会启动），并同步主人的邮箱。
+  # key 和 register 共用 provision.sh。curlimages/curl（curl 许可证）只为这里有 sh 和 curl：
+  # hub 和 agent 都是 scratch 镜像，脚本没处放。
+  key:
+    image: curlimages/curl:8.23.0@sha256:3fb7e13e5d179a845c97d78204f3f1064d1907037f26a3ebf91710571151fd93
+    entrypoint: ["sh", "/provision.sh", "keys"]
+    # curl 镜像默认以 uid 10001 运行，要写 agent 的授权文件。
+    user: "0:0"
+    environment:
+      WONTON_OWNER_EMAIL: ${WONTON_OWNER_EMAIL:?插件要主人的邮箱建管理员}
+      WONTON_SECRET_OWNER_PASSWORD: ${WONTON_SECRET_OWNER_PASSWORD}
+    volumes:
+      - ${WONTON_APP_DATA}/agent:/var/lib/beszel-agent
+    configs:
+      - source: provision
+        target: /provision.sh
+    depends_on:
+      hub:
+        condition: service_healthy
+    restart: "no"
+
+  # 一次性服务：agent 连上以后才有这台服务器的记录，装完打开就看到它（固定的系统 id，host 是套接字路径）。
+  # 已登记的系统和它的历史不动，数据被删掉时才重建。
+  register:
+    image: curlimages/curl:8.23.0@sha256:3fb7e13e5d179a845c97d78204f3f1064d1907037f26a3ebf91710571151fd93
+    entrypoint: ["sh", "/provision.sh", "register"]
+    user: "0:0"
+    environment:
+      WONTON_OWNER_EMAIL: ${WONTON_OWNER_EMAIL:?插件要主人的邮箱建管理员}
+      WONTON_SECRET_OWNER_PASSWORD: ${WONTON_SECRET_OWNER_PASSWORD}
+    volumes:
+      - ${WONTON_APP_DATA}/agent:/var/lib/beszel-agent
+    configs:
+      - source: provision
+        target: /provision.sh
+    depends_on:
+      hub:
+        condition: service_healthy
+      agent:
+        condition: service_healthy
+    restart: "no"
+
+  agent:
+    # 上游官方镜像（MIT），按 amd64/arm64 清单列表摘要固定。
+    image: henrygd/beszel-agent:0.21.1@sha256:cb6868012964d7a68debaa2c84bb72285e5f08531e81f506bd4c493bf052e41c
+    # 必须在宿主网络里：不在的话读到的是自己容器的网卡，网络图是错的（上游为此要求 host 网络）。
+    # 顺带拿到宿主的温度、磁盘和包更新，不需要 privileged、cap_add 或 pid: host。
+    network_mode: host
+    environment:
+      # 只用套接字，不监听端口；hub 是发起方，agent 不需要 HUB_URL/TOKEN。
+      LISTEN: /beszel_socket/beszel.sock
+      # hub 的公钥，由 key 步骤写入。
+      KEY_FILE: /var/lib/beszel-agent/authorized_key
+      DATA_DIR: /var/lib/beszel-agent
+      # 空串关掉容器监控：没挂 Docker socket（主人还没定要不要给），不给插件 root 权限。
+      DOCKER_HOST: ""
+      TZ: ${TZ}
+    volumes:
+      - ${WONTON_APP_DATA}/socket:/beszel_socket
+      - ${WONTON_APP_DATA}/agent:/var/lib/beszel-agent
+    read_only: true
+    tmpfs:
+      - /tmp
+    healthcheck:
+      # 上游的 health 子命令看 agent 自己的健康文件（每 90 秒刷新）。
+      test: ["CMD", "/agent", "health"]
       interval: 30s
       timeout: 5s
       start_period: 30s
-      start_interval: 1s
+      start_interval: 2s
+    depends_on:
+      key:
+        condition: service_completed_successfully
 
 configs:
-  site:
-    file: web/default.conf.template
-  page:
-    file: web/index.html
-  tokens:
-    file: web/tokens.css
+  provision:
+    file: provision.sh
 
 x-wonton:
-  spec: "0.5"
-  # 换成你自己的：反向域名形式，装上以后不能改。
-  id: app.example.hello
-  version: 0.1.1
+  spec: "0.6"
+  id: dev.beszel.beszel
+  version: 0.1.0
   kind: app
-  title: { zh: 你好, en: Hello }
-  description: { zh: 向登录的人问好的示例网页, en: An example page that greets whoever is signed in }
+  title: { en: Beszel }
+  description:
+    zh: 看这台服务器的 CPU、内存、磁盘、网络和温度，带历史图表
+    en: CPU, memory, disk, network and temperature of this server, with history
   icon: icon.svg
   notices: [NOTICE]
-  screenshots: [screenshots/home.png]
-  author: { name: Example }
-  homepage: https://nginx.org
-  # 应用（这里是 nginx）的许可证；插件包自己的许可证写在仓库的 LICENSE 里。
-  license: BSD-2-Clause
+  screenshots: [screenshots/status.png, screenshots/cpu.png, screenshots/network.png, screenshots/settings.png]
+  author: { name: geraldpeng6, url: https://github.com/geraldpeng6 }
+  homepage: https://beszel.dev
+  license: MIT
   tags:
-    zh: [工具]
-    en: [Tools]
+    zh: [监控]
+    en: [Monitoring]
   about:
     zh: |
-      一个示例网页：登录以后，页面会向你问好。新建插件时可以照着改。
+      看这台服务器的状态：CPU、内存、磁盘、网络、温度和历史图表，阈值告警也在里面。
+
+      装好就是这样：打开直接落在这台服务器的详情页，不用添加机器，也不用登录应用本身——网页只经云吞网关进来，网关已经认了你。Agent 在宿主网络里，读到的网卡和传感器是宿主自己的。不看每个容器用了多少：插件自己在不在跑看 App 的“应用”页。告警只在 Beszel 自己的页面里。
+
+      Beszel 是 henrygd 的开源项目（MIT）。
     en: |
-      An example page: once you are signed in, the page says hello. Copy it as a starting point for a new plugin.
-  release_notes: { zh: 名字和说明更新。, en: Product name and description update. }
+      Watch this server: CPU, memory, disk, network, temperature and history charts, with threshold alerts.
+
+      It opens like this: the detail page of this server, no machine to add and no app sign-in — the page is only reachable through the Wonton gateway, which already authenticates you. The agent runs in the host network, so the interfaces and sensors it reads are the host's own. Per-container usage is not monitored; whether the plugin itself runs is on the App's Apps page. Alerts stay in Beszel's own pages.
+
+      Beszel is an open-source project by henrygd (MIT).
+  release_notes:
+    zh: 第一个版本。
+    en: First release.
   webui:
-    service: web
-    port: 80
-    # 示例页回显网关注入的用户名，见 https://github.com/geraldpeng6/wonton-docs/blob/main/plugin-spec.md#网关代登录sso-proxy。
+    service: hub
+    port: 8090
     sso: proxy
     proxy:
       headers:
-        Remote-User: "{user}"
-  # 能放到底栏的页面，见 https://github.com/geraldpeng6/wonton-docs/blob/main/plugin-spec.md#底栏页面tabs。放不放由用户决定。
+        X-Wonton-User-Email: "{email}"
+  # 面板的“状态”页：这台服务器的详情页。系统 id 由 provision 固定，重启、升级、重装都不变。
   tabs:
-    - id: home
-      title: { zh: 主页, en: Home }
-      icon: tabs/home.svg
-      icon_selected: tabs/home-fill.svg
-      path: /
-      # 这个页面没做适配，用默认的 inset：页面夹在 App 的栏中间，不会被挡。
-      # 想让内容从栏下滚过，写 layout: edge-to-edge，并用 --wonton-inset-* 留出栏的位置。
-  permissions: []
-  # 上游 nginx 官方镜像，amd64 和 arm64 都有；上游没写最低内存，按本机空闲实测取整（实测约 24M，取 64M）。
+    - id: status
+      title: { zh: 状态, en: Status }
+      icon: tabs/status.svg
+      path: /system/wontonlocal0000
+  permissions:
+    # Agent 要在宿主网络里，网络图才是宿主的网卡。
+    - network.host
+    # 建管理员和代登录头都要主人的邮箱。
+    - owner.identity
+  secrets:
+    # 管理员在应用里的密码：只在首次启动时用来建账号，被代登录头取代。
+    owner_password:
+      generate: { bytes: 32 }
+  # 上游没写最低内存；空闲实测 21MiB（hub+agent，2026-11-06），早先一次约 55MiB，取 96M。
   requirements:
     arch: [amd64, arm64]
-    memory: 64M
+    memory: 96M

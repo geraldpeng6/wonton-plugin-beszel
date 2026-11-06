@@ -1,14 +1,21 @@
 图标
-====
+----
 
-`icon.svg` 为本仓库原创，按插件规范的线条风格手写，未用图片模型生成。从模板新建的插件换成自己的图标时，这里按实际情况重写。
+`icon.svg` 是 Beszel 的官方标志，原样取自上游仓库
+<https://github.com/henrygd/beszel/blob/main/internal/site/public/static/icon.svg>，只做了等比缩放并放在白色底上
+（上游没有规定底色）。未改色、未变形。
 
-许可证
-------
+Copyright (c) 2024 henrygd，MIT 许可证，全文见下。Beszel 是 henrygd 的项目，本插件不是官方出品，也不表示得到其背书。
+`dev.beszel.beszel` 这个插件标识只表示是这个应用的插件。
+
+底栏图标 `tabs/status.svg` 为本仓库原创线条图标，按本仓库的 MIT 许可证分发。
+
+上游标志的许可证
+----------------
 
 MIT License
 
-Copyright (c) 2026 Wonton plugin authors
+Copyright (c) 2024 henrygd
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
