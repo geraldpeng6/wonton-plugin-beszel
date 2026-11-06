@@ -18,6 +18,7 @@ data_marker() { printf 'keep-%s' "${E2E_INSTANCE:-${SMOKE_INSTANCE:-dev}}"; }
 
 data_write() { # 改服务器名字，并确认已经攒下历史记录
   local marker rows
+  dweb --fresh / -L >/dev/null || { echo "重建会话失败"; return 1; }
   marker="$(data_marker)"
   for _ in $(seq 1 60); do
     rows="$(dweb "/api/collections/system_stats/records?perPage=1&fields=id")" || { echo "查历史失败：$rows"; return 1; }
@@ -30,8 +31,9 @@ data_write() { # 改服务器名字，并确认已经攒下历史记录
     { echo "改名没生效"; return 1; }
 }
 
-data_check() { # 名字和历史都还在
+data_check() { # 名字和历史都还在。重装、升级会重建核心，会话要重来
   local marker out
+  dweb --fresh / -L >/dev/null || { echo "重建会话失败"; return 1; }
   marker="$(data_marker)"
   out="$(dweb "/api/collections/systems/records/$SYSTEM_ID")" || { echo "查服务器失败：$out"; return 1; }
   grep -qF "\"name\":\"$marker\"" <<<"$out" || { echo "改过的名字丢了：$(head -c 200 <<<"$out")"; return 1; }
