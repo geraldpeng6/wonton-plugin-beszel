@@ -7,11 +7,12 @@ services:
     environment:
       # 通知和页面里的链接用它，语义是插件的公开地址。
       APP_URL: ${WONTON_APP_URL}
-      # 新装时（空数据库）由上游建第一个管理员：邮箱取主人填的，密码由核心生成。
-      # 之后这两项不再生效，主人改了邮箱时 key 步骤在每次启动时改回当前值。
-      USER_EMAIL: ${WONTON_OWNER_EMAIL:?插件要主人的邮箱建管理员}
+      # 新装时（空数据库）由上游建第一个管理员：账号邮箱是主人用户名拼的固定内部地址，密码由核心生成。
+      # 之后这两项不再生效；老版本里管理员的邮箱是真实邮箱，升级或重装时 key 步骤就地改成内部地址。
+      USER_EMAIL: ${WONTON_OWNER_NAME:?插件要主人的用户名}@beszel.internal
       USER_PASSWORD: ${WONTON_SECRET_OWNER_PASSWORD}
-      # 网关代登录：网关注入这个头，值就是用户的邮箱（上游按邮箱找用户，不建新用户）。
+      # 网关代登录：网关注入这个头，值是主人用户名拼的固定内部地址（上游按邮箱找用户，不建新用户）。
+      # 认人不看邮箱——邮箱会变，用户名不会，改了邮箱也进得去。
       TRUSTED_AUTH_HEADER: X-Wonton-User-Email
       # 只信核心的地址；别的来源自己带这个头也进不来。
       TRUSTED_PROXY_IPS: ${WONTON_CORE_ADDRESS}
@@ -38,7 +39,8 @@ services:
     # curl 镜像默认以 uid 10001 运行，要写 agent 的授权文件。
     user: "0:0"
     environment:
-      WONTON_OWNER_EMAIL: ${WONTON_OWNER_EMAIL:?插件要主人的邮箱建管理员}
+      # 管理员的邮箱：主人用户名拼的固定内部地址。老版本里是真实邮箱，升级时就地改过来。
+      WONTON_ADMIN_EMAIL: ${WONTON_OWNER_NAME:?插件要主人的用户名}@beszel.internal
       WONTON_SECRET_OWNER_PASSWORD: ${WONTON_SECRET_OWNER_PASSWORD}
     volumes:
       - ${WONTON_APP_DATA}/agent:/var/lib/beszel-agent
@@ -57,7 +59,8 @@ services:
     entrypoint: ["sh", "/provision.sh", "register"]
     user: "0:0"
     environment:
-      WONTON_OWNER_EMAIL: ${WONTON_OWNER_EMAIL:?插件要主人的邮箱建管理员}
+      # 管理员的邮箱：主人用户名拼的固定内部地址。老版本里是真实邮箱，升级时就地改过来。
+      WONTON_ADMIN_EMAIL: ${WONTON_OWNER_NAME:?插件要主人的用户名}@beszel.internal
       WONTON_SECRET_OWNER_PASSWORD: ${WONTON_SECRET_OWNER_PASSWORD}
     volumes:
       - ${WONTON_APP_DATA}/agent:/var/lib/beszel-agent
@@ -113,7 +116,7 @@ configs:
 x-wonton:
   spec: "0.6"
   id: dev.beszel.beszel
-  version: 0.1.0
+  version: 0.2.0
   kind: app
   title: { en: Beszel }
   description:
@@ -142,15 +145,15 @@ x-wonton:
 
       Beszel is an open-source project by henrygd (MIT).
   release_notes:
-    zh: 第一个版本。
-    en: First release.
+    zh: "认人改用主人的固定内部地址（用户名@beszel.internal），不再看邮箱：在云吞里改了邮箱不用重装，直接就能进。升级时管理员的邮箱就地改成内部地址，数据不动。"
+    en: "Sign-in now matches a fixed internal address derived from your username (username@beszel.internal) instead of your email — changing your email no longer locks you out. Upgrading rewrites the admin account in place, keeping all data."
   webui:
     service: hub
     port: 8090
     sso: proxy
     proxy:
       headers:
-        X-Wonton-User-Email: "{email}"
+        X-Wonton-User-Email: "{user}@beszel.internal"
   # 面板的“状态”页：这台服务器的详情页。系统 id 由 provision 固定，重启、升级、重装都不变。
   tabs:
     - id: status
@@ -160,7 +163,7 @@ x-wonton:
   permissions:
     # Agent 要在宿主网络里，网络图才是宿主的网卡。
     - network.host
-    # 建管理员和代登录头都要主人的邮箱。
+    # 建管理员和代登录头用主人的用户名拼固定内部地址。
     - owner.identity
   secrets:
     # 管理员在应用里的密码：只在首次启动时用来建账号，被代登录头取代。

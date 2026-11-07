@@ -6,11 +6,11 @@ export DATA_NA=0
 
 web_assert() { grep -qi '<title>.*beszel' <<<"$(tr -d '\n' | head -c 4000)"; }   # 标准输入：SPA 首页 HTML
 
-identity_check() { # 应用自己的当前用户接口：认出的是主人，而且是管理员
+identity_check() { # 应用自己的当前用户接口：认出的是主人的固定内部地址，而且是管理员
   local out email
   out="$(dweb /api/collections/users/auth-refresh -X POST)" || { echo "auth-refresh 失败：$out"; return 1; }
   grep -q '"role":"admin"' <<<"$out" || { echo "不是管理员：$(head -c 200 <<<"$out")"; return 1; }
-  email="${SMOKE_OWNER_EMAIL:-$(sed -n 's/^WONTON_OWNER_EMAIL=//p' "${dir:-.}/.wonton/.env" 2>/dev/null | tail -1)}"
+  email="${SMOKE_OWNER:-owner}@beszel.internal"
   grep -qF "\"email\":\"$email\"" <<<"$out" || { echo "认出的不是主人（$email）：$(head -c 200 <<<"$out")"; return 1; }
 }
 
