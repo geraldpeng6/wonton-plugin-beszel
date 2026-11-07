@@ -1,6 +1,6 @@
 #!/bin/sh
 # 一次性服务，两个步骤（参数是步骤名）。只在安装、升级、重建和每次启动时跑，必须幂等：
-#   keys     把 Hub 当前的公钥交给 Agent，并把主人当前的邮箱同步给管理员和登记用的超级用户。
+#   keys     把 Hub 当前的公钥交给 Agent，并把管理员的邮箱改成注入的内部地址（网关认人用的固定值）。
 #            Agent 起来之前跑（它没有公钥不会启动）。
 #   register Agent 连上以后，在 Hub 里登记这台服务器；已登记的不动（名字和历史归用户）。
 # 上游没有“无界面登记机器”的接口，这里用 PocketBase 的超级用户 API 做。
@@ -45,7 +45,7 @@ while :; do
     "{\"identity\":\"$provisioner_email\",\"password\":\"$WONTON_SECRET_OWNER_PASSWORD\"}")
   if [ "$status" != 200 ]; then
     status=$(call POST /api/collections/_superusers/auth-with-password '' \
-      "{\"identity\":\"$WONTON_OWNER_EMAIL\",\"password\":\"$WONTON_SECRET_OWNER_PASSWORD\"}")
+      "{\"identity\":\"$WONTON_ADMIN_EMAIL\",\"password\":\"$WONTON_SECRET_OWNER_PASSWORD\"}")
   fi
   [ "$status" = 200 ] && break
   if [ "$attempt" -ge 30 ]; then
@@ -67,15 +67,16 @@ swap_superuser() {
   [ "$status" = 200 ] || { log "改超级用户邮箱失败（HTTP $status）：$(cat "$work/body")"; exit 1; }
 }
 
-# 管理员记录的邮箱跟着主人当前的值走：网关按邮箱认人，代登录头里的值变了要跟上。
-# 容器里的 WONTON_OWNER_EMAIL 是建容器时的快照，所以每次启动都覆盖成当前值。
+# 管理员记录的邮箱跟着注入的内部地址走：网关代登录头里的值就是它，头变了要跟上。
+# 按角色找管理员（管理员只有一个），不按邮箱找——升级前的管理员还是真实邮箱，就地改过来，不新建账号。
+# 注入值是建容器时的快照；用户名不会变，值也就稳定。
 status=$(call GET '/api/collections/users/records?perPage=1&filter=role%3D%22admin%22' "$token")
 [ "$status" = 200 ] || { log "查管理员失败（HTTP $status）：$(cat "$work/body")"; exit 1; }
 admin_id=$(grep -o '"id":"[a-z0-9]*"' "$work/body" | tail -1 | sed 's/.*:"//; s/"$//')
 [ -n "$admin_id" ] || { log "Hub 里没有管理员（USER_EMAIL 没生效？）"; exit 1; }
 # 超级用户身份改别人的邮箱不用旧密码。
 status=$(call PATCH "/api/collections/users/records/$admin_id" "$token" \
-  "{\"email\":\"$WONTON_OWNER_EMAIL\",\"verified\":true}")
+  "{\"email\":\"$WONTON_ADMIN_EMAIL\",\"verified\":true}")
 [ "$status" = 200 ] || { log "同步管理员邮箱失败（HTTP $status）：$(cat "$work/body")"; exit 1; }
 
 # Agent 只认 Hub 当前的公钥。密钥存在 hub 的数据目录里，保留数据的重装也还是它。
