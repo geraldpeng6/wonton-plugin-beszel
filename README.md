@@ -3,7 +3,7 @@
 服务器状态：CPU、内存、磁盘、网络和温度，带历史图表。上游项目是
 <https://github.com/henrygd/beszel>（MIT），本仓库只是它在云吞里的插件包。
 
-开发流程见[插件开发指南](https://github.com/geraldpeng6/wonton-docs/blob/main/develop.md)。
+开发流程见[插件开发指南](https://github.com/wontonapp/wonton-docs/blob/main/develop.md)。
 
 ## 怎么装的
 
