@@ -118,10 +118,10 @@ x-wonton:
   id: dev.beszel.beszel
   version: 0.2.0
   kind: app
-  title: { en: Beszel }
+  title: { zh: 服务器体检（Beszel）, en: Server Health (Beszel) }
   description:
-    zh: 看这台服务器的 CPU、内存、磁盘、网络和温度，带历史图表
-    en: CPU, memory, disk, network and temperature of this server, with history
+    zh: 像给家里的服务器做体检：CPU、内存、硬盘、网络和温度一页看全，带历史曲线，超过你设的线就提醒你。
+    en: "A health check for your home server: CPU, memory, disk, network and temperature on one page with history charts, and an alert when something crosses a line you set."
   icon: icon.svg
   notices: [NOTICE]
   screenshots: [screenshots/status.png, screenshots/cpu.png, screenshots/network.png, screenshots/settings.png]
@@ -133,13 +133,13 @@ x-wonton:
     en: [Monitoring]
   about:
     zh: |
-      看这台服务器的状态：CPU、内存、磁盘、网络、温度和历史图表，阈值告警也在里面。
+      看家里服务器的状态：CPU、内存、硬盘、网络、温度和历史图表，超过设定的线会提醒你。
 
       装好就是这样：打开直接落在这台服务器的详情页，不用添加机器，也不用登录应用本身——网页只经云吞网关进来，网关已经认了你。Agent 在宿主网络里，读到的网卡和传感器是宿主自己的。不看每个容器用了多少：插件自己在不在跑看 App 的“应用”页。告警只在 Beszel 自己的页面里。
 
       Beszel 是 henrygd 的开源项目（MIT）。
     en: |
-      Watch this server: CPU, memory, disk, network, temperature and history charts, with threshold alerts.
+      Keep an eye on your home server: CPU, memory, disk, network, temperature and history charts, with alerts when something crosses a line you set.
 
       It opens like this: the detail page of this server, no machine to add and no app sign-in — the page is only reachable through the Wonton gateway, which already authenticates you. The agent runs in the host network, so the interfaces and sensors it reads are the host's own. Per-container usage is not monitored; whether the plugin itself runs is on the App's Apps page. Alerts stay in Beszel's own pages.
 
