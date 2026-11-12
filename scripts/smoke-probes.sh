@@ -2,7 +2,6 @@
 # Beszel：sso=proxy（网关带 X-Wonton-User-Email 代登录）；清单没有 mcp。
 # 历史数据算用户数据：data_write 改这台服务器的名字并确认已经有历史记录，data_check 在升级、重装后核对还在。
 SYSTEM_ID=wontonlocal0000
-export DATA_NA=0
 
 web_assert() { grep -qi '<title>.*beszel' <<<"$(tr -d '\n' | head -c 4000)"; }   # 标准输入：SPA 首页 HTML
 
@@ -10,11 +9,11 @@ identity_check() { # 应用自己的当前用户接口：认出的是主人的�
   local out email
   out="$(dweb /api/collections/users/auth-refresh -X POST)" || { echo "auth-refresh 失败：$out"; return 1; }
   grep -q '"role":"admin"' <<<"$out" || { echo "不是管理员：$(head -c 200 <<<"$out")"; return 1; }
-  email="${SMOKE_OWNER:-owner}@beszel.internal"
+  email="$SMOKE_OWNER@beszel.internal"
   grep -qF "\"email\":\"$email\"" <<<"$out" || { echo "认出的不是主人（$email）：$(head -c 200 <<<"$out")"; return 1; }
 }
 
-data_marker() { printf 'keep-%s' "${E2E_INSTANCE:-${SMOKE_INSTANCE:-dev}}"; }
+data_marker() { printf 'keep-%s' "$SMOKE_INSTANCE"; }
 
 data_write() { # 改服务器名字，并确认已经攒下历史记录
   local marker rows
