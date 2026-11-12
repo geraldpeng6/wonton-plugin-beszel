@@ -89,7 +89,7 @@ services:
       # hub 的公钥，由 key 步骤写入。
       KEY_FILE: /var/lib/beszel-agent/authorized_key
       DATA_DIR: /var/lib/beszel-agent
-      # 空串关掉容器监控：没挂 Docker socket（主人还没定要不要给），不给插件 root 权限。
+      # 空串关掉容器监控：不挂 Docker socket，不给插件 root 权限。
       DOCKER_HOST: ""
       TZ: ${TZ}
     volumes:
