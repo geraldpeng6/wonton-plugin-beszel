@@ -76,7 +76,7 @@ services:
 
   agent:
     # 上游官方镜像（MIT），按 amd64/arm64 清单列表摘要固定。
-    image: henrygd/beszel-agent:0.21.1@sha256:cb6868012964d7a68debaa2c84bb72285e5f08531e81f506bd4c493bf052e41c
+    image: henrygd/beszel-agent:0.21.2@sha256:343254226ae57a5cc6f8c23c755b1464730aba2abc7043116a2e222711ec6e1a
     # 必须在宿主网络里：不在的话读到的是自己容器的网卡，网络图是错的（上游为此要求 host 网络）。
     # 顺带拿到宿主的温度、磁盘和包更新，不需要 privileged、cap_add 或 pid: host。
     network_mode: host
